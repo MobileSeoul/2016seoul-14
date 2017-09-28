@@ -1,0 +1,65 @@
+var express = require('express');
+var app = express();
+var routes = require('./routes');
+var http = require('http');
+var path = require('path');
+
+//var app = module.exports = express.createServer();
+
+// Configuration
+
+app.configure(function(){
+  app.set('views', __dirname + '/views');
+  app.set('view engine', 'jade');
+  app.use(express.favicon());
+  app.use(express.bodyParser());
+  app.use(express.methodOverride());
+  app.use(express.multipart());   //멀티업로드 가능
+  app.use(express.urlencoded());
+  app.use(express.json());
+  app.use(app.router);
+  app.use(express.static(__dirname + '/public'));
+  app.use(express.static(__dirname + '/ssgimg'));
+  app.use(express.static(__dirname + '/tipimg'));
+  app.use(express.static(__dirname + '/contimg'));
+  app.use(express.static(__dirname + '/volimg'));
+  app.set('port', process.env.PORT || 9000);
+});
+
+app.configure('development', function(){
+  app.use(express.errorHandler({ dumpExceptions: true, showStack: true }));
+});
+
+app.configure('production', function(){
+  app.use(express.errorHandler());
+});
+
+// Routes
+
+app.get('/', routes.index);
+app.post('/report', routes.report);
+app.get('/gallery', routes.gallery);
+app.post('/like_toggle', routes.like_toggle);
+app.get('/ssg_cnt', routes.ssg_cnt);
+app.get('/volunteer_list', routes.volunteer_list);
+app.post('/volunteer_join', routes.volunteer_join);
+app.post('/my_ssg', routes.my_ssg);
+app.post('/declare_toggle', routes.declare_toggle);
+app.post('/my_sak', routes.my_sak);
+app.get('/tip_list', routes.tip_list);
+app.post('/tip_detail', routes.tip_detail);
+app.post('/tip_upload', routes.tip_upload);
+app.post('/volunteer_upload', routes.volunteer_upload);
+app.get('/mainData', routes.mainData);
+app.post('/myProfile', routes.myProfile);
+app.post('/myssg_delete', routes.myssg_delete);
+app.post('/myssg_modify', routes.myssg_modify);
+app.post('/send_authMail', routes.send_authMail);
+app.post('/profile_modify', routes.profile_modify);
+app.post('/volunteer_detail', routes.volunteer_detail);
+app.post('/Login', routes.Login);
+
+module.exports = app;
+http.createServer(app).listen(app.get('port'), function() {
+    console.log('Express server listening on port ' + app.get('port'));
+});

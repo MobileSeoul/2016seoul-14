@@ -1,0 +1,1572 @@
+var path = require("path");
+var fs = require("fs");
+var express = require('express');
+var generic_pool = require("generic-pool");
+var mysql = require("mysql");
+var gcm = require('node-gcm');
+var nodemailer = require('nodemailer');
+var request = require('request');
+
+var pool = generic_pool.Pool({
+	name : 'mysql',
+	create : function(callback) {
+		var config = {
+			host : "localhost",
+			port : "3306",
+			user : "root",
+			password : "6271",
+			database : "ssg"
+		};
+		var client = mysql.createConnection(config);
+		client.connect(function(err) {
+			if (err)
+				console.error("err", err);
+			callback(err, client);
+		});
+	},
+	destroy : function(client) {
+		client.end();
+	},
+	min : 2,
+	max : 10,
+	idleTimeoutMillis : 300000,
+	log : true
+});
+
+process.on("exit", function() {
+	pool.drain(function() {
+		pool.destroyAllNow();
+	});
+});
+
+
+exports.index = function(req, res){
+  res.render('index', { title: 'Express' })
+};
+
+//제보하기
+exports.report = function(req, res){
+
+	//변수 설정
+	var picture = req.files.picture;
+	var uid = req.body.uid;
+	var comment = req.body.comment;
+	var detail_location = req.body.detail_location;
+	var pname = req.body.pname;
+	var lat = req.body.lat;
+	var lng = req.body.lng;
+
+	//유저 별 제보사진 이미지 디렉토리 설정
+	var userfolder = path.resolve(__dirname, '..', 'ssgimg', uid);
+
+	if(! fs.existsSync(userfolder)){
+		fs.mkdirSync(userfolder);
+	}
+
+	//업로드 이미지 이름 설정
+	var name = picture.name;
+	ssgimg = "http://52.78.115.250:9000/" +  uid + "/" + name;
+
+	var srcpath = picture.path;
+	var destpath = path.resolve(userfolder, name);
+	var is = fs.createReadStream(srcpath);
+	var os = fs.createWriteStream(destpath);
+	is.pipe(os);
+	is.on("end", function(){
+		fs.unlinkSync(srcpath);
+
+		var srcimg = destpath;
+		var idx = destpath.lastIndexOf('.');
+		var filename = destpath.substring(0, idx);
+		var ext = destpath.substring(idx);
+		var destimg = filename + '-thumbnail' + ext;
+
+		pool.acquire(function(err, conn){
+			conn.query("insert into grafitti (picture, uid, comment, detail_location, pname, lat, lng) values(?,?,?,?,?,?,?)", [ssgimg, uid, comment, detail_location, pname, lat, lng],function(err, result){
+				if(err){
+					console.log("err",err);
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code :  200,
+						msg : "success"
+					});
+				}
+			});
+			pool.release(conn);
+		});
+	});
+}
+
+//쓱 갤러리
+exports.gallery = function(req, res){
+
+	var page = req.query.page;
+	var uid = req.query.uid;
+
+	pool.acquire(function(err, conn){
+		conn.query("select g.gid, picture, pname, detail_location, comment, ifnull(sum(s.like_cnt), 0) as 'total_like', ifnull(sum(d.declare_cnt), 0) as 'total_declare', DATE_FORMAT(create_date, '%Y-%m-%d') as create_date from user u, grafitti g left outer join ssg_up s on g.gid = s.gid left outer join g_declare d on g.gid = d.gid where u.uid = g.uid group by g.gid order by create_date desc limit ?,20", 20*(page-1),function(err,result){
+			conn.query("select nickname from user u, grafitti g left outer join ssg_up s on g.gid = s.gid where u.uid = g.uid group by g.gid order by create_date desc limit ?,20", 20*(page-1),function(err2,resultA){
+				conn.query("select s.like_cnt from grafitti g left outer join ssg_up s on s.gid = g.gid where g.uid=? group by g.gid order by create_date desc limit ?,20", [uid, 20*(page-1)], function(err3,resultB){
+					conn.query("select d.declare_cnt from grafitti g left outer join g_declare d on d.gid=g.gid where g.uid=? group by g.gid order by create_date desc limit ?,20", [uid, 20*(page-1)], function(err4, resultC){
+						if(result[0]){
+							if(err){
+								res.json({
+									code : 201,
+		               				msg : err
+		            			});
+		         			}
+		         			else{
+		         				var isEnd = false;
+								if(result.length < 20){
+									isEnd = true;
+								}
+								for(var i=0; i<result.length; i++){
+									result[i].user = resultA[i];
+									result[i].like = resultB[i];
+									result[i].declare = resultC[i];
+			       				}
+			       				res.json({
+			       					code : 200,
+			        				msg : "success",
+				    				last : isEnd,
+				    				gallery_list : result
+			        			});
+		         			}
+		         		}
+		         		else{
+		         			if(err){
+		         				res.json({
+		         					code : 201,
+		         					msg : err
+		         				});
+		         			}
+		         			else{
+		         				res.json({
+		         					code : 404,
+		         					msg : "no data"
+		         				});
+		         			}
+		         		}
+	         		});
+         		});
+         	});
+		});
+		pool.release(conn);
+	});
+}
+
+//좋아요
+exports.like_toggle = function(req, res){
+
+	var gid = req.body.gid;
+	var uid = req.body.uid;
+
+	pool.acquire (function(err, conn){
+
+		conn.query("select like_cnt from ssg_up where gid=? and uid=?", [gid, uid], function(err, likec) {
+
+			if(likec[0]){
+
+				if(likec[0].like_cnt == 0){
+
+					conn.query("update ssg_up set like_cnt =? where gid = ? and uid = ?", [1, gid, uid], function(err, result){
+
+						if (err) {
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						conn.query("select * from ssg_up where gid=? and uid=?", [gid, uid], function(err, resultA){
+							if (err) {
+								res.json({
+									code : 201,
+									msg : err
+								});
+							}
+							else {
+								if(resultA[0]){
+									res.json({
+										code : 200,
+										msg : "success",
+										gid : resultA[0].gid,
+										uid : resultA[0].uid,
+										like_cnt : resultA[0].like_cnt
+										//like_info : resultA
+									});
+								}
+								else{
+									res.json({
+										code : 404,
+										msg : "no data"
+									});
+								}
+							}
+						});
+					});
+				}
+				else{
+					conn.query("update ssg_up set like_cnt =? where gid = ? and uid = ?", [0, gid, uid], function(err, result){
+						if (err) {
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						conn.query("select * from ssg_up where gid=? and uid=?", [gid, uid], function(err, resultA){
+							if (err) {
+								res.json({
+									code : 201,
+									msg : err
+								});
+							}
+							else {
+								if(resultA[0]){
+								/*var like_info = {
+								like_info : resultA
+								}*/
+									res.json({
+										code : 200,
+										msg : "success",
+										gid : resultA[0].gid,
+										uid : resultA[0].uid,
+										like_cnt : resultA[0].like_cnt
+									});
+								}
+								else{
+									res.json({
+										code : 404,
+										msg : "no data"
+									});
+								}
+							}
+						});
+					});
+				}
+			}
+			else{
+				conn.query("insert into ssg_up(uid, gid, like_cnt) values(?, ?, ?)", [uid, gid, 1], function(err, insert){
+					if (err) {
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					conn.query("select * from ssg_up where gid=? and uid=?", [gid, uid], function(err, resultA){
+						if (err) {
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						else {
+							if(resultA[0]){
+							/*var like_info = {
+							like_info : resultA
+							}*/
+								res.json({
+									code : 200,
+									msg : "success",
+									gid : resultA[0].gid,
+									uid : resultA[0].uid,
+									like_cnt : resultA[0].like_cnt
+								});
+							}
+							else{
+								res.json({
+									code : 404,
+									msg : "no data"
+								});
+							}
+						}
+					});
+				});
+			}	
+		});
+		pool.release(conn);
+	});
+}
+
+//신고하기
+exports.declare_toggle = function(req, res){
+
+	var gid = req.body.gid;
+	var uid = req.body.uid;
+	var reason = req.body.reason;
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select declare_cnt from g_declare where gid=? and uid=?", [gid, uid], function(err, declarec){
+
+			if(declarec[0]){
+
+				if(declarec[0].declare_cnt == 0){
+
+					conn.query("update g_declare set declare_cnt=?, reason=? where gid=? and uid=?", [1, reason, gid, uid], function(err, result){
+						if(err){
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						conn.query("select * from g_declare where gid=? and uid=?", [gid, uid], function(err, resultA){
+							if(err){
+								res.json({
+									code : 201,
+									msg : err
+								});
+							}
+							else{
+								if(resultA[0]){
+									res.json({
+										code : 200,
+										msg : "success",
+										gid : resultA[0].gid,
+										uid : resultA[0].uid,
+										declare_cnt : resultA[0].declare_cnt,
+										reason : resultA[0].reason
+									});
+								}
+								else{
+									res.json({
+										code : 404,
+										msg : "no data"
+									});
+								}
+							}
+						});
+					});
+				}
+				else{
+					conn.query("update g_declare set declare_cnt=?, reason=? where gid=? and uid=?", [0, "", gid, uid], function(err, result){
+						if(err){
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						conn.query("select * from g_declare where gid=? and uid=?", [gid, uid], function(err, resultA){
+							if(err){
+								res.json({
+									code : 201,
+									msg : err
+								});
+							}
+							else{
+								if(resultA[0]){
+									res.json({
+										code : 200,
+										msg : "success",
+										gid : resultA[0].gid,
+										uid : resultA[0].uid,
+										declare_cnt : resultA[0].declare_cnt,
+										reason : resultA[0].reason
+									});
+								}
+								else{
+									res.json({
+										code : 404,
+										msg : "no data"
+									});
+								}
+							}
+						});
+					});
+				}
+			}
+			else{
+				conn.query("insert into g_declare(declare_cnt, reason, gid, uid) values(?,?,?,?)", [1, reason, gid, uid],  function(err, insert){
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					conn.query("select * from g_declare where gid=? and uid=?", [gid, uid], function(err, resultA){
+						if(err){
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						else{
+							if(resultA[0]){
+								res.json({
+									code : 200,
+									msg : "success",
+									gid : resultA[0].gid,
+									uid : resultA[0].uid,
+									declare_cnt : resultA[0].declare_cnt,
+									reason : resultA[0].reason
+								});
+							}
+							else{
+								res.json({
+									code : 404,
+									msg : "no data"
+								});
+							}
+						}
+					});
+				});
+			}
+		});
+
+		pool.release(conn);
+	});
+}
+
+//쓱 게시물 총 개수
+exports.ssg_cnt = function(req, res){
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select count(gid) 'total_count' from grafitti",function(err,result){
+			if(err){
+				res.json({
+					code : 201,
+					msg : err
+				});
+			}
+			else{
+				if(result[0]){
+					res.json({
+						code : 200,
+						msg : "success",
+						ssg_count : result[0].total_count
+					});
+				}
+				else{
+					res.json({
+						code : 404,
+						msg : "no data"
+					});
+				}
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//봉사활동 목록
+exports.volunteer_list = function(req, res){
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select v.vid, vname, spot, DATE_FORMAT(schedule, '%Y-%m-%d') as schedule, time, meeting_location, detail_info, recruitment, ifnull(sum(j.apply), 0) 'total_volunteer', thumbnail from volunteer v left outer join v_join j on v.vid=j.vid group by v.vid order by schedule asc", function(err,result){
+			if(err){
+				res.json({
+					code : 201,
+					msg : err
+				});
+			}
+			else{
+				if(result[0]){
+					res.json({
+						code : 200,
+						msg : "success",
+						volunteer_list : result
+					});
+				}
+				else{
+					res.json({
+						code : 404,
+						msg : "no data"
+					});
+				}
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//봉사활동 신청
+exports.volunteer_join = function(req, res){
+
+	var vid = req.body.vid;
+	var uid = req.body.uid;
+	var uname = req.body.uname;
+	var uphone = req.body.uphone;
+
+	pool.acquire (function(err, conn){
+
+		conn.query("select recruitment, ifnull(sum(apply), 0) 'total_volunteer' from volunteer v, v_join j where v.vid = j.vid and v.vid=?", [vid], function(err,select){
+			if(err){
+				res.json({
+					code : 201,
+					msg : err
+				});
+			}
+			if(select[0]){
+				conn.query("select apply from v_join where vid=? and uid=?", [vid, uid], function(err, vjoin) {
+
+					if(vjoin[0]){
+
+							conn.query("delete from v_join where vid = ? and uid = ?", [vid, uid], function(err, result){
+							if(err){
+								res.json({
+									code : 601,
+									msg : "delete failed"
+								});
+							}
+							else{
+								res.json({
+									code : 600,
+									msg : "delete success"
+								});
+							}
+						});
+					}
+					else{
+						if(select[0].recruitment == select[0].total_volunteer){
+							res.json({
+								code : 901,
+								msg : "exceed the recruitment"
+							});
+						}
+						else{
+							conn.query("insert into v_join(uid, vid, apply, uname, uphone) values(?, ?, ?, ?, ?)", [uid, vid, 1, uname, uphone], function(err, insert){
+								if (err) {
+									res.json({
+										code : 201,
+										msg : err
+									});
+								}
+								conn.query("select * from v_join where vid=? and uid=?", [vid, uid], function(err2, resultA){
+									conn.query("select uid, apply, uname, uphone from v_join where vid=? and uid=?", [vid, uid], function(err3, resultB){
+										if (err2) {
+											res.json({
+												code : 201,
+												msg : err2
+											});
+										}
+										if(err3){
+												console.log("err3", err3);
+												res.json({
+													code : 201,
+													msg : err3
+												});
+										}
+										else {
+											if(resultA[0]){
+												res.json({
+													code : 200,
+													msg : "insert success",
+													vid : resultA[0].vid,
+													user : resultB[0]
+												});
+											}
+											else{
+												res.json({
+													code : 404,
+													msg : "no data"
+												});
+											}
+										}
+									});
+								});
+							});
+						}
+					}	
+				});
+			}
+			else{
+				res.json({
+					code : 404,
+					msg : "no data"
+				});
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//나의 쓱 제보
+exports.my_ssg = function(req, res){
+
+	var uid = req.body.uid;
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select gid, picture, pname, detail_location, comment, lat, lng, DATE_FORMAT(create_date, '%Y-%m-%d') as create_date from grafitti where uid=?", [uid] , function(err, result){
+			if(result[0]){
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 200,
+						msg : "success",
+						my_ssg : result
+					});
+				}
+			}
+			else{
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 404,
+						msg : "no data"
+					});
+				}
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//나의 싹 내역
+exports.my_sak = function(req, res){
+
+	var uid = req.body.uid;
+	/*var dt = new Date();
+
+	var month = dt.getMonth()+1;
+	var day = dt.getDate();
+	var year = dt.getFullYear();
+
+	var today = year + '-' + month + '-' + day;*/
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select v.vid, vname, spot, DATE_FORMAT(schedule, '%Y-%m-%d') as schedule, time, recruitment, j.uid, apply from v_join j, volunteer v where j.vid = v.vid and j.uid=?", [uid], function(err, result){
+			conn.query("select schedule from v_join j, volunteer v where v.vid=j.vid and j.uid=?", [uid], function(err2,vdate){
+				var today = new Date();
+				var timerNum = 0;
+				if(result[0]){
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					else{
+						for(var i=0; i<result.length; i++){
+							var gap = vdate[i].schedule.getTime() - (today.getTime()+1000);
+							var d = Math.floor(gap / (1000*60*60*24)) + 1;
+							result[i].Dday = d;
+	       				}
+						res.json({
+							code : 200,
+							msg : "success",
+							my_sak : result,
+						});
+					}
+				}
+				else{
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					else{
+						res.json({
+							code : 404,
+							msg : "no data"
+						});
+					}
+				}
+			});
+		});
+		pool.release(conn);
+	});
+}
+
+//봉사활동 상세화면
+exports.volunteer_detail = function(req, res){
+	var vid = req.body.vid;
+	var uid = req.body.uid;
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select picture from volunteer_detail where vid=?", [vid], function(err,result){
+			conn.query("select apply from v_join where uid=? and vid=?", [uid, vid], function(err2, resultA){			
+				if(result[0]){
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					if(err2){
+						res.json({
+							code : 201,
+							msg : err2
+						});
+					}
+					if(!resultA[0]){
+						res.json({
+							code : 200,
+							msg : "success",
+							volunteer_apply : 0,
+							volunteer_picture : result
+						});
+					}
+					else{
+						res.json({
+							code : 200,
+							msg : "success",
+							volunteer_apply : resultA[0].apply,
+							volunteer_picture : result
+						});
+					}
+				}
+				else{
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					if(err2){
+						res.json({
+							code : 201,
+							msg : err2
+						});
+					}
+					else{
+						res.json({
+							code : 404,
+							msg : "no data"
+						});
+					}
+				}
+			});
+		});
+		pool.release(conn);
+	});
+}
+
+//싹 팁 리스트
+exports.tip_list = function(req, res){
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select tid, category, thumbnail, title, subtitle from tip", function(err,result){
+			if(result[0]){
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 200,
+						msg : "success",
+						tip_list : result
+					});
+				}
+			}
+			else{
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 404,
+						msg : "no data"
+					});
+				}
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//싹 팁 상세화면
+exports.tip_detail = function(req, res){
+
+	var tid = req.body.tid;
+
+	pool.acquire(function(err,conn){
+
+		conn.query("select * from tip_contents where tid=? order by slide_no asc", [tid], function(err,result){
+			if(result[0]){
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 200,
+						msg : "success",
+						tip_detail : result
+					});
+				}
+			}
+			else{
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 404,
+						msg : "no data"
+					});
+				}
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//싹 팁 게시물 등록하기 - 관리자
+exports.tip_upload = function(req, res){
+
+	var category = req.body.category;
+	var thumbnail = req.files.thumbnail;
+	var title = req.body.title;
+	var subtitle = req.body.subtitle;
+	var slide_no = req.body.slide_no;
+	var contents = req.body.contents;
+	var contents_img = req.files.contents_img;
+	
+	if(Array.isArray(slide_no)){
+
+		var i = 0;
+
+		//싹 팁 게시물 이미지 디렉토리 설정
+		var tipfolder = path.resolve(__dirname, '..', 'tipimg');
+
+		if(! fs.existsSync(tipfolder)){
+			fs.mkdirSync(tipfolder);
+		}
+
+		//싹 팁 컨텐츠 이미지 디렉토리 설정
+		var contfolder = path.resolve(__dirname, '..', 'contimg');
+
+		if(! fs.existsSync(contfolder)){
+			fs.mkdirSync(contfolder);
+		}
+
+		//게시물 업로드 이미지 이름 설정
+		var name = thumbnail.name;
+		var tipimg = "http://52.78.115.250:9000/" + name;
+
+		var srcpath = thumbnail.path;
+		var destpath = path.resolve(tipfolder, name);
+		var is = fs.createReadStream(srcpath);
+		var os = fs.createWriteStream(destpath);
+		is.pipe(os);
+		is.on("end", function(){
+			fs.unlinkSync(srcpath);
+
+			var srcimg = destpath;
+			var idx = destpath.lastIndexOf('.');
+			var filename = destpath.substring(0, idx);
+			var ext = destpath.substring(idx);
+			var destimg = filename + '-thumbnail' + ext;
+
+			pool.acquire(function(err,conn){
+				conn.query("insert into tip (category, thumbnail, title, subtitle) values(?,?,?,?)", [category, tipimg, title, subtitle], function(err,result){
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+
+					slide_no.forEach(function(slide){
+
+						var cont = contents[i];
+						var name1 = contents_img[i].name;
+						var contimg = "http://52.78.115.250:9000/" + name1;
+						var srcpath1 = contents_img[i].path;
+						var destpath1 = path.resolve(contfolder, name1);
+						var is1 = fs.createReadStream(srcpath1);
+						var os1 = fs.createWriteStream(destpath1);
+						is1.pipe(os1);
+						is1.on("end", function(){
+							fs.unlinkSync(srcpath1);
+
+							console.log(i + cont);
+							conn.query("insert into tip_contents (tid, contents, contents_img, slide_no) values(?,?,?,?)", [result.insertId, cont, contimg, slide], function(err2, resultA){
+								if(err2){
+									res.json({
+										code : 201,
+										msg : err2
+										});
+								}
+								else{
+									res.json({
+										code : 200,
+										msg : "success"
+									});
+								}
+							});
+						});
+						i++;
+					});
+				});
+				pool.release(conn);
+			});
+		});
+	}
+
+	else{
+		
+		//싹 팁 게시물 이미지 디렉토리 설정
+		var tipfolder = path.resolve(__dirname, '..', 'tipimg');
+
+		if(! fs.existsSync(tipfolder)){
+			fs.mkdirSync(tipfolder);
+		}
+
+		//싹 팁 컨텐츠 이미지 디렉토리 설정
+		var contfolder = path.resolve(__dirname, '..', 'contimg');
+
+		if(! fs.existsSync(contfolder)){
+			fs.mkdirSync(contfolder);
+		}
+
+		//게시물 업로드 이미지 이름 설정
+		var name = thumbnail.name;
+		var tipimg = "http://52.78.115.250:9000/" + name;
+
+		var srcpath = thumbnail.path;
+		var destpath = path.resolve(tipfolder, name);
+		var is = fs.createReadStream(srcpath);
+		var os = fs.createWriteStream(destpath);
+		is.pipe(os);
+		is.on("end", function(){
+			fs.unlinkSync(srcpath);
+
+			var srcimg = destpath;
+			var idx = destpath.lastIndexOf('.');
+			var filename = destpath.substring(0, idx);
+			var ext = destpath.substring(idx);
+			var destimg = filename + '-thumbnail' + ext;
+
+			pool.acquire(function(err,conn){
+				conn.query("insert into tip (category, thumbnail, title, subtitle) values(?,?,?,?)", [category, tipimg, title, subtitle], function(err,result){
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+
+					var name1 = contents_img.name;
+					var contimg = "http://52.78.115.250:9000/" + name1;
+
+					var srcpath1 = contents_img.path;
+					var destpath1 = path.resolve(contfolder, name1);
+					var is1 = fs.createReadStream(srcpath1);
+					var os1 = fs.createWriteStream(destpath1);
+					is1.pipe(os1);
+					is1.on("end", function(){
+						fs.unlinkSync(srcpath1);
+
+						conn.query("insert into tip_contents (tid, contents, contents_img, slide_no) values(?,?,?,?)", [result.insertId, contents, contimg, 1], function(err2,resultA){
+							if(err2){
+								res.json({
+									code : 201,
+									msg : err2
+								});
+							}
+							else{
+								res.json({
+									code : 200,
+									msg : "success"
+								});
+							}
+						});
+					});
+				});
+				pool.release(conn);
+			});
+		});
+	}
+}
+
+//봉사활동 등록 - 관리자
+exports.volunteer_upload = function(req, res){
+
+	var gid = req.body.gid;
+	var vname = req.body.vname;
+	var spot = req.body.spot;
+	var schedule = req.body.schedule;
+	var time = req.body.time;
+	var meeting_location = req.body.meeting_location;
+	var detail_info = req.body.detail_info;
+	var recruitment = req.body.recruitment;
+	var thumbnail = req.files.thumbnail;
+
+	//싹 팁 게시물 이미지 디렉토리 설정
+	var volfolder = path.resolve(__dirname, '..', 'volimg');
+
+	if(! fs.existsSync(volfolder)){
+		fs.mkdirSync(volfolder);
+	}
+
+	//게시물 업로드 이미지 이름 설정
+	var name = thumbnail.name;
+	var volimg = "http://52.78.115.250:9000/" + name;
+
+	var srcpath = thumbnail.path;
+	var destpath = path.resolve(volfolder, name);
+	var is = fs.createReadStream(srcpath);
+	var os = fs.createWriteStream(destpath);
+	is.pipe(os);
+	is.on("end", function(){
+		fs.unlinkSync(srcpath);
+
+		var srcimg = destpath;
+		var idx = destpath.lastIndexOf('.');
+		var filename = destpath.substring(0, idx);
+		var ext = destpath.substring(idx);
+		var destimg = filename + '-thumbnail' + ext;
+
+		pool.acquire(function(err, conn){
+			conn.query("insert into volunteer (vname, spot, schedule, time, meeting_location, detail_info, recruitment, thumbnail) values (?,?,?,?,?,?,?,?)", [vname, spot, schedule, time, meeting_location, detail_info, recruitment, volimg], function(err, insert){
+				gid.forEach(function(gid_no){
+					conn.query("insert into volunteer_detail (vid, picture) values (?,(select picture from grafitti where gid=?))", [insert.insertId, gid_no], function(err2,result){
+						if(err){
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						if(err2){
+							res.json({
+								code : 201,
+								msg : err2
+							});
+						}
+						else{
+							res.json({
+								code : 200,
+								msg : "success"
+							});
+						}
+					});
+				});
+			});
+		pool.release(conn);
+		})
+	});
+}
+
+//메인 화면 데이터
+exports.mainData = function(req, res){
+	pool.acquire(function(err,conn){
+		conn.query("select tid, category, thumbnail, title, subtitle from tip", function(err,result){
+			conn.query("select v.vid, vname, spot, DATE_FORMAT(schedule, '%Y-%m-%d') as schedule, time, meeting_location, detail_info, recruitment, ifnull(sum(j.apply), 0) 'total_volunteer', thumbnail from volunteer v left outer join v_join j on v.vid=j.vid group by v.vid order by schedule asc", function(err2, resultA){
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				if(err2){
+					res.json({
+						code : 201,
+						msg : err2
+					});
+				}
+				else{
+					res.json({
+						code : 200,
+						msg : "success",
+						tip_list : result,
+						volunteer_list : resultA
+					});
+				}
+			});
+		});
+		pool.release(conn);
+	})
+}
+
+//나의 프로필
+exports.myProfile = function(req, res){
+
+	var uid = req.body.uid;
+
+	pool.acquire(function(err,conn){
+		conn.query("select * from user where uid=?", [uid], function(err,result){
+			if(result[0]){
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 200,
+						msg : "success",
+						uid : result[0].uid,
+						social_id : result[0].social_id,
+						email : result[0].email,
+						nickname : result[0].nickname,
+						profile : result[0].profile,
+						join_type : result[0].join_type
+					});
+				}
+			}
+			else{
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					res.json({
+						code : 404,
+						msg : "no data"
+					})
+				}
+			}
+		});
+		pool.release(conn);
+	})
+}
+
+//나의 쓱 게시물 삭제
+exports.myssg_delete = function(req, res){
+
+	var uid = req.body.uid;
+	var gid = req.body.gid;
+
+	pool.acquire(function(err,conn){
+		conn.query("select * from grafitti where uid=? and gid=?", [uid, gid], function(err,result){
+			if(result[0]){
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					conn.query("delete from grafitti where uid=? and gid=?", [uid, gid], function(err2,resultA){
+						if(err2){
+							res.json({
+								code : 601,
+								msg : "delete failed"
+							});
+						}
+						else{
+							res.json({
+								code : 600,
+								msg : "delete success"
+							});
+						}
+					});
+				}
+			}
+			else{
+				res.json({
+					code : 404,
+					msg : "no data"
+				});
+			}
+		});
+		pool.release(conn);
+	})
+}
+
+//나의 쓱 게시물 수정
+exports.myssg_modify = function(req, res){
+
+	var picture = req.files.picture;
+	var uid = req.body.uid;
+	var gid = req.body.gid;
+	var comment = req.body.comment;
+	var detail_location = req.body.detail_location;
+	var pname = req.body.pname;
+	var lat = req.body.lat;
+	var lng = req.body.lng;
+
+	//유저 별 제보사진 이미지 디렉토리 설정
+	var userfolder = path.resolve(__dirname, '..', 'ssgimg', uid);
+
+	if(! fs.existsSync(userfolder)){
+		fs.mkdirSync(userfolder);
+	}
+
+	pool.acquire(function(err,conn){
+		conn.query("select * from grafitti where uid=? and gid=?", [uid, gid], function(err,result){
+			if(result[0]){
+				if(typeof req.body.comment === 'undefined' || req.body.comment == ""){
+					comment = result[0].comment;
+				}
+				if(typeof req.body.detail_location === 'undefined' || req.body.detail_location == ""){
+					detail_location = result[0].detail_location;
+				}
+				if(typeof req.body.pname === 'undefined' || req.body.pname == ""){
+					pname = result[0].pname;
+				}
+				if(typeof req.body.lat === 'undefined' || req.body.lat == ""){
+					lat = result[0].lat;
+				}
+				if(typeof req.body.lng === 'undefined' || req.body.lng == ""){
+					lng = result[0].lng;
+				}
+				if(picture){
+					//업로드 이미지 이름 설정
+					var name = picture.name;
+					ssgimg = "http://52.78.115.250:9000/" +  uid + "/" + name;
+
+					var srcpath = picture.path;
+					var destpath = path.resolve(userfolder, name);
+					var is = fs.createReadStream(srcpath);
+					var os = fs.createWriteStream(destpath);
+					is.pipe(os);
+					is.on("end", function(){
+						fs.unlinkSync(srcpath);
+
+						var srcimg = destpath;
+						var idx = destpath.lastIndexOf('.');
+						var filename = destpath.substring(0, idx);
+						var ext = destpath.substring(idx);
+						var destimg = filename + '-thumbnail' + ext;
+						if(err){
+							res.json({
+								code : 201,
+								msg : err
+							});
+						}
+						else{
+							conn.query("update grafitti set comment=?, picture=?, detail_location=?, pname=?, lat=?, lng=? where uid=? and gid=?", [comment, ssgimg, detail_location, pname, lat, lng, uid, gid], function(err2,resultA){
+								conn.query("select gid, picture, pname, detail_location, comment, lat, lng, DATE_FORMAT(create_date, '%Y-%m-%d') as create_date from grafitti where uid=? and gid=?", [uid, gid], function(err3,select){
+									if(err2){
+										res.json({
+											code : 701,
+											msg : "update failed"
+										});
+									}
+									else{
+										res.json({
+											code : 700,
+											msg : "update success",
+											gid : select[0].gid,
+											picture : select[0].picture,
+											pname : select[0].pname,
+											detail_location : select[0].detail_location,
+											comment : select[0].comment,
+											lat : select[0].lat,
+											lng : select[0].lng,
+											create_date : select[0].create_date
+										});
+									}
+								});
+							});
+						}
+					});
+				}
+				else{
+					conn.query("update grafitti set comment=?, detail_location=?, pname=?, lat=?, lng=? where uid=? and gid=?", [comment, detail_location, pname, lat, lng, uid, gid], function(err4,resultB){
+						conn.query("select gid, picture, pname, detail_location, comment, lat, lng, DATE_FORMAT(create_date, '%Y-%m-%d') as create_date from grafitti where uid=? and gid=?", [uid, gid], function(err5,select2){
+							if(err4){
+								res.json({
+									code : 701,
+									msg : "update failed"
+								});
+							}
+							else{
+								res.json({
+									code : 700,
+									msg : "update success",
+									gid : select2[0].gid,
+									picture : select2[0].picture,
+									pname : select2[0].pname,
+									detail_location : select2[0].detail_location,
+									comment : select2[0].comment,
+									lat : select2[0].lat,
+									lng : select2[0].lng,
+									create_date : select2[0].create_date
+								});
+							}
+						});
+					});
+				}
+			}
+			else{
+				res.json({
+					code : 404,
+					msg : "no data"
+				});
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//인증메일 보내기
+exports.send_authMail = function(req, res){
+
+	//var nickname = req.body.nickname;
+	var uid = req.body.uid;
+	var email = req.body.email;
+
+	//랜덤 문자열 생성
+	var chars = "0123456789";
+	var string_length = 6;
+	var randomstring = '';
+	for (var i=0; i<string_length; i++) {
+		var rnum = Math.floor(Math.random() * chars.length);
+		randomstring += chars.substring(rnum,rnum+1);
+	}
+
+	//발신 메일 설정
+	var smtpTransport = nodemailer.createTransport("SMTP", {
+		service: 'Gmail',
+		auth: {
+			user: 'team6271@gmail.com',
+			pass: 'Team6271!'
+		}
+	});
+
+	//메일 컨텐츠 설정
+	var mailOptions = {
+		from: 'Team6271 <team6271@gmail.com>',
+		to: email,
+		subject: '[쓱싹] 인증번호를 알려드립니다.',
+		text: randomstring
+	};
+
+	smtpTransport.sendMail(mailOptions, function(err, response){
+		if(err){
+			console.log(err);
+			res.json({
+				code : 201,
+				msg : err
+			});
+		} 
+		else{
+			console.log("Message sent : " + response.message);
+			pool.acquire(function(err,conn){
+				conn.query("update user set auth_key=? where uid=?", [randomstring, uid], function(err2,insert){
+					if(err2){
+						res.json({
+							code : 701,
+							msg : "update failed"
+						});
+					}
+					else{
+						res.json({
+							code : 700,
+							msg : "update success"
+						});
+					}
+				});
+				pool.release(conn);
+			});
+		}
+		smtpTransport.close();
+	});
+}
+
+//유저 프로필 수정
+exports.profile_modify = function(req, res){
+
+	var uid = req.body.uid;
+	var email = req.body.email;
+	var nickname = req.body.nickname;
+	var auth_key = req.body.auth_key;
+
+	pool.acquire(function(err,conn){
+		conn.query("select * from user where uid=?", [uid], function(err,select){
+			if(select[0] && req.body.auth_key == select[0].auth_key){
+				if(typeof req.body.nickname === 'undefined' || req.body.nickname == ""){
+					nickname = select[0].nickname;
+				}
+				if(err){
+					res.json({
+						code : 201,
+						msg : err
+					});
+				}
+				else{
+					conn.query("update user set email=?, nickname=?, auth_key=? where uid=?", [email, nickname, null, uid], function(err2,result){
+						//console.log(req.body.nickname);
+						if(err2){
+							res.json({
+								code : 701,
+								msg : "update failed"
+							});
+						}
+						else{
+							res.json({
+								code : 700,
+								msg : "update success"
+							});
+						}
+					});
+				}
+			}
+			else{
+				if(!select[0]){
+					res.json({
+						code : 404,
+						msg : "no data"
+					});
+				}
+				if(req.body.auth_key !== select[0].auth_key){
+					res.json({
+						code : 801,
+						msg : "wrong auth_key"
+					});
+				}
+			}
+		});
+		pool.release(conn);
+	});
+}
+
+//로그인
+exports.Login = function(req, res){
+
+	var social_id = req.body.social_id;
+	var email = req.body.email;
+	var nickname = req.body.nickname;
+	var profile = req.body.profile;
+	var join_type = req.body.join_type;
+	var access_token = req.body.access_token;
+
+	pool.acquire(function(err,conn){
+		//카카오톡
+		if(join_type == 'K'){
+			conn.query("select * from user where social_id=?", [social_id], function(err,result){
+				if(result[0]){
+					if(err){
+						res.json({
+							code : 201,
+							msg : err
+						});
+					}
+					else{
+						res.json({
+							code : 200,
+							msg : "success",
+							uid : result[0].uid,
+							social_id : result[0].social_id,
+							email : result[0].email,
+							nickname : result[0].nickname,
+							profile : result[0].profile,
+							join_type : result[0].join_type
+						});
+					}
+				}
+				else{
+					console.log("social_id", social_id);
+					conn.query("insert into user (social_id, email, nickname, profile, join_type) values (?,?,?,?,?)", [social_id, email, nickname, profile, join_type], function(err2, resultA){
+						conn.query("select * from user where uid=?", [resultA.insertId], function(err3,resultB){
+							if(err2){
+								res.json({
+									code : 201,
+									msg : err2
+								});
+							}
+							else{
+								res.json({
+									code : 200,
+									msg : "success",
+									uid : resultB[0].uid,
+									social_id : resultB[0].social_id,
+									email : resultB[0].email,
+									nickname : resultB[0].nickname,
+									profile : resultB[0].profile,
+									join_type : resultB[0].join_type
+								});
+							}
+						});
+					});
+				}
+			});
+		}
+		//페이스북
+		else{
+
+		 	var app_id = 987608598035369;
+		 	var url = 'https://graph.facebook.com/me?access_token=' + access_token + '&app_id='  + app_id;
+
+			request.get({url: url}, function (error, response, body) {
+				if(error){
+					res.json({
+						code : 201,
+						msg : error
+					});
+				}
+				else{
+					var info = JSON.parse(body);
+					console.log(info.id);
+					social_id = info.id;
+
+					conn.query("select * from user where social_id=?", [social_id], function(err,result){
+						if(result[0]){
+							if(err){
+								res.json({
+									code : 201,
+									msg : err
+								});
+							}
+							else{
+								res.json({
+									code : 200,
+									msg : "success",
+									uid : result[0].uid,
+									social_id : result[0].social_id,
+									email : result[0].email,
+									nickname : result[0].nickname,
+									profile : result[0].profile,
+									join_type : result[0].join_type
+								});
+							}
+						}
+						else{
+							conn.query("insert into user (social_id, email, nickname, profile, join_type) values (?,?,?,?,?)", [social_id, email, nickname, profile, join_type], function(err2, resultA){
+								conn.query("select * from user where uid=?", [resultA.insertId], function(err3,resultB){
+									if(err2){
+										res.json({
+											code : 201,
+											msg : err2
+										});
+									}
+									else{
+										res.json({
+											code : 200,
+											msg : "success",
+											uid : resultB[0].uid,
+											social_id : resultB[0].social_id,
+											email : resultB[0].email,
+											nickname : resultB[0].nickname,
+											profile : resultB[0].profile,
+											join_type : resultB[0].join_type
+										});
+									}
+								});
+							});
+						}
+					});
+				}
+			});
+		}
+		pool.release(conn);
+	});
+}
