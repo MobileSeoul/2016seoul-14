@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white"
+    android:orientation="vertical"
+    tools:ignore="MissingPrefix">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/logo" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="24dp"
+        android:layout_marginRight="24dp"
+        android:orientation="vertical">
+
+        <com.seoulapp.ssg.widget.CustomLoginButton
+            android:id="@+id/btn_kakao_login"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            app:bg="@drawable/login_kakao_bg"
+            app:font="custom4"
+            app:symbol="@drawable/ic_kakao_symbol"
+            app:text="카카오톡으로 로그인"
+            app:textColor="@color/colorKaKaoText" />
+
+        <com.seoulapp.ssg.widget.CustomLoginButton
+            android:id="@+id/btn_facebook_login"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            app:bg="@drawable/login_facebook_bg"
+            app:font="custom4"
+            app:symbol="@drawable/ic_facebook_symbol"
+            app:text="페이스북으로 로그인"
+            app:textColor="@color/colorFacebookText" />
+
+        <TextView
+            android:id="@+id/tvLinkify"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:layout_marginTop="20dp"
+            android:textColor="@android:color/black" />
+
+    </LinearLayout>
+</LinearLayout>

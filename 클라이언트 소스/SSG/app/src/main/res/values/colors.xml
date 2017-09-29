@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#e8eceb</color>
+    <color name="colorPrimaryDark">#a8c0da</color>
+    <color name="colorTvBackground">#efe4e4</color>
+    <color name="colorAccent">@android:color/black</color>
+    <color name="btnChanged">#e4101e</color>
+    <color name="bntNormal">#797e79</color>
+    <!-- App Primaray TextColors -->
+    <color name="app_body_text_1">#35437F</color>
+
+    <color name="drawer_body_text_1">#313131</color>
+    <color name="ssg_erase_btn_non_clicked">#105282</color>
+    <color name="ssg_erase_btn_clicked">#367caf</color>
+
+    <color name="colorKakao">#ffde00</color>
+    <color name="colorFacebook">#254fa1</color>
+    <color name="colorKaKaoText">#3c1e1e</color>
+    <color name="colorFacebookText">@android:color/white</color>
+
+</resources>

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_gravity="center"
+    android:background="@android:color/white"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/edit_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="20dp"
+        android:layout_marginTop="20dp"
+        android:text="아이디 만들기"
+        android:textColor="@android:color/black"
+        android:textSize="20dp"
+        android:textStyle="bold" />
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_margin="20dp"
+        android:background="@android:color/white">
+
+        <EditText
+            android:id="@+id/edit_name"
+            android:layout_width="170dp"
+            android:layout_height="40dp"
+            android:layout_marginBottom="20dp"
+            android:layout_marginRight="20dp"
+            android:background="#EEEEEE"
+            android:hint="이름"
+            android:inputType="textPersonName"
+            android:paddingLeft="5dp"
+            android:textSize="16dp" />
+
+        <ImageView
+            android:id="@+id/profile_picture"
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            android:layout_toRightOf="@+id/edit_name"
+            android:background="#999999"
+            android:scaleType="fitXY" />
+
+        <EditText
+            android:id="@+id/edit_email"
+            android:layout_width="170dp"
+            android:layout_height="40dp"
+            android:layout_below="@id/edit_name"
+            android:background="#EEEEEE"
+            android:hint="이메일"
+            android:inputType="textEmailAddress"
+            android:maxLines="1"
+            android:paddingLeft="5dp"
+            android:textSize="16dp" />
+
+        <Button
+            android:id="@+id/edit_login"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_gravity="center"
+            android:text="가입하기"
+            android:textColor="@android:color/white"
+            android:textSize="20dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_above="@id/edit_login"
+            android:background="#dcdcdc" />
+
+    </RelativeLayout>
+
+</LinearLayout>

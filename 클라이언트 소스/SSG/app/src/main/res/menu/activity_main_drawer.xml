@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/nav_ssg_gallery"
+        android:title="@string/nav_ssg_gallery" />
+
+    <item
+        android:id="@+id/nav_ssg_history"
+        android:title="@string/nav_ssg_history" />
+
+    <item
+        android:id="@+id/nav_sak_history"
+        android:title="@string/nav_ssac_history" />
+
+    <item
+        android:id="@+id/nav_setting"
+        android:title="@string/nav_app_setting" />
+
+
+</menu>

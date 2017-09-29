@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/colorPrimary"
+    android:orientation="vertical"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp"
+    android:paddingTop="16dp"
+    android:weightSum="1"
+    tools:ignore="MissingPrefix">
+
+
+    <com.seoulapp.ssg.widget.SsgRatioImageView
+        android:id="@+id/iv_picture"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginBottom="15dp"
+        android:scaleType="fitXY" />
+
+    <TextView
+        android:id="@+id/tv_spot_detail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginBottom="5dp"
+        android:drawableLeft="@drawable/ic_room_white_24dp"
+        android:gravity="center"
+        android:textColor="@android:color/black"
+        app:font="custom5"
+        tools:text="경복궁 향원정 두번째 기둥" />
+
+    <TextView
+        android:id="@+id/tv_ssg_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginBottom="6dp"
+        android:textColor="@android:color/black"
+        app:font="custom5"
+        tools:text="2016.08.07" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@android:color/black" />
+
+    <TextView
+        android:id="@+id/tv_ssg_comment"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity=""
+        android:layout_marginBottom="6dp"
+        android:layout_marginTop="6dp"
+        android:textColor="@android:color/black"
+        app:font="custom2"
+        tools:text="너무 더러워요. 빨리 지워졌으면 좋겠어요" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@android:color/black" />
+
+    <Button
+        android:id="@+id/btn_remove_ssg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="@color/ssg_erase_btn_non_clicked"
+        android:lineSpacingExtra="2dp"
+        android:padding="5dp"
+        android:textColor="#E6E2E7"
+        android:textSize="18dp"
+        app:font="custom5"
+        tools:text="지워주세요 \n 1927" />
+
+    <TextView
+        android:id="@+id/btn_report_ssg"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginBottom="6dp"
+        android:layout_marginTop="6dp"
+        android:drawableLeft="@drawable/ic_church_bell_black"
+        android:gravity="center"
+        android:text="이 게시물 신고하기"
+        android:textColor="@android:color/black"
+        app:font="custom2" />
+</LinearLayout>

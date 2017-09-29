@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white"
+    android:orientation="vertical">
+
+    <Button
+        android:id="@+id/btn_profile_change"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@android:color/white"
+        android:onClick="onClick"
+        android:text="@string/btn_setting_profie"
+        android:textColor="@color/drawer_body_text_1"
+        android:textSize="@dimen/setting_text_size" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#dcdcdc" />
+
+    <Button
+        android:id="@+id/btn_policy_agreement"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@android:color/white"
+        android:text="@string/btn_setting_policy_agreement"
+        android:textColor="@color/drawer_body_text_1"
+        android:textSize="@dimen/setting_text_size" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#dcdcdc" />
+
+    <Button
+        android:id="@+id/btn_personal_info"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@android:color/white"
+        android:text="@string/btn_setting_personal_info"
+        android:textColor="@color/drawer_body_text_1"
+        android:textSize="@dimen/setting_text_size" />
+
+</LinearLayout>
